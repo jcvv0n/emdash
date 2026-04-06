@@ -33,6 +33,7 @@
 		"enabled": true,
 	},
 	// Worker Loader for plugin sandboxing
+	// Comment out the worker_loaders to disable plugins
 	// "worker_loaders": [
 	//	{
 	//		"binding": "LOADER",
