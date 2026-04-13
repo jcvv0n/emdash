@@ -39,6 +39,7 @@ export class FTSManager {
 	 * Uses _emdash_ prefix to clearly mark as internal/system table
 	 */
 	getFtsTableName(collectionSlug: string): string {
+		validateIdentifier(collectionSlug, "collection slug");
 		return `_emdash_fts_${collectionSlug}`;
 	}
 
@@ -46,6 +47,7 @@ export class FTSManager {
 	 * Get the content table name for a collection
 	 */
 	getContentTableName(collectionSlug: string): string {
+		validateIdentifier(collectionSlug, "collection slug");
 		return `ec_${collectionSlug}`;
 	}
 
@@ -101,6 +103,7 @@ export class FTSManager {
 	 * Create triggers to keep FTS table in sync with content table
 	 */
 	private async createTriggers(collectionSlug: string, searchableFields: string[]): Promise<void> {
+		this.validateInputs(collectionSlug, searchableFields);
 		const ftsTable = this.getFtsTableName(collectionSlug);
 		const contentTable = this.getContentTableName(collectionSlug);
 		const fieldList = searchableFields.join(", ");
@@ -147,6 +150,7 @@ export class FTSManager {
 	 * Drop triggers for a collection
 	 */
 	private async dropTriggers(collectionSlug: string): Promise<void> {
+		this.validateInputs(collectionSlug);
 		const ftsTable = this.getFtsTableName(collectionSlug);
 
 		await sql.raw(`DROP TRIGGER IF EXISTS "${ftsTable}_insert"`).execute(this.db);
@@ -360,9 +364,7 @@ export class FTSManager {
 	/**
 	 * Verify FTS index integrity and rebuild if corrupted.
 	 *
-	 * Checks for two corruption indicators:
-	 * 1. Row count mismatch between content table and FTS table
-	 * 2. FTS5 integrity-check failure (catches shadow table inconsistencies)
+	 * Checks for row count mismatch between content table and FTS table.
 	 *
 	 * Returns true if the index was rebuilt, false if it was healthy.
 	 */
@@ -393,21 +395,6 @@ export class FTSManager {
 			console.warn(
 				`FTS index for "${collectionSlug}" has ${ftsRows} rows but content table has ${contentRows}. Rebuilding.`,
 			);
-			const fields = await this.getSearchableFields(collectionSlug);
-			const config = await this.getSearchConfig(collectionSlug);
-			if (fields.length > 0) {
-				await this.rebuildIndex(collectionSlug, fields, config?.weights);
-			}
-			return true;
-		}
-
-		// Check 2: FTS5 integrity check (catches shadow table corruption)
-		try {
-			await sql
-				.raw(`INSERT INTO "${ftsTable}"("${ftsTable}") VALUES('integrity-check')`)
-				.execute(this.db);
-		} catch {
-			console.warn(`FTS integrity check failed for "${collectionSlug}". Rebuilding index.`);
 			const fields = await this.getSearchableFields(collectionSlug);
 			const config = await this.getSearchConfig(collectionSlug);
 			if (fields.length > 0) {
