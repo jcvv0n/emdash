@@ -1,4 +1,5 @@
-import { Button, Dialog, Input, InputArea } from "@cloudflare/kumo";
+import { Button, Dialog, Input, InputArea, Select, Switch } from "@cloudflare/kumo";
+import { useLingui } from "@lingui/react/macro";
 import {
 	TextT,
 	TextAlignLeft,
@@ -13,15 +14,17 @@ import {
 	LinkSimple,
 	BracketsCurly,
 	Link,
+	GlobeSimple,
 	Rows,
 	Plus,
 	Trash,
+	X,
 } from "@phosphor-icons/react";
-import { X } from "@phosphor-icons/react";
 import * as React from "react";
 
 import type { FieldType, CreateFieldInput, SchemaField } from "../lib/api";
 import { cn } from "../lib/utils";
+import { AllowedTypesEditor } from "./AllowedTypesEditor";
 
 // ============================================================================
 // Constants
@@ -42,103 +45,12 @@ export interface FieldEditorProps {
 	isSaving?: boolean;
 }
 
-const FIELD_TYPES: {
+interface FieldTypeConfig {
 	type: FieldType;
 	label: string;
 	description: string;
 	icon: React.ElementType;
-}[] = [
-	{
-		type: "string",
-		label: "Short Text",
-		description: "Single line text input",
-		icon: TextT,
-	},
-	{
-		type: "text",
-		label: "Long Text",
-		description: "Multi-line plain text",
-		icon: TextAlignLeft,
-	},
-	{
-		type: "number",
-		label: "Number",
-		description: "Decimal number",
-		icon: Hash,
-	},
-	{
-		type: "integer",
-		label: "Integer",
-		description: "Whole number",
-		icon: Hash,
-	},
-	{
-		type: "boolean",
-		label: "Boolean",
-		description: "True/false toggle",
-		icon: ToggleLeft,
-	},
-	{
-		type: "datetime",
-		label: "Date & Time",
-		description: "Date and time picker",
-		icon: Calendar,
-	},
-	{
-		type: "select",
-		label: "Select",
-		description: "Single choice from options",
-		icon: List,
-	},
-	{
-		type: "multiSelect",
-		label: "Multi Select",
-		description: "Multiple choices from options",
-		icon: ListChecks,
-	},
-	{
-		type: "portableText",
-		label: "Rich Text",
-		description: "Rich text editor",
-		icon: FileText,
-	},
-	{
-		type: "image",
-		label: "Image",
-		description: "Image from media library",
-		icon: ImageIcon,
-	},
-	{
-		type: "file",
-		label: "File",
-		description: "File from media library",
-		icon: File,
-	},
-	{
-		type: "reference",
-		label: "Reference",
-		description: "Link to another content item",
-		icon: LinkSimple,
-	},
-	{
-		type: "json",
-		label: "JSON",
-		description: "Arbitrary JSON data",
-		icon: BracketsCurly,
-	},
-	{
-		type: "slug",
-		label: "Slug",
-		description: "URL-friendly identifier",
-		icon: Link,
-	},
-	{
-		type: "repeater",
-		label: "Repeater",
-		description: "Repeating group of fields",
-		icon: Rows,
-	},
-];
+}
 
 interface RepeaterSubFieldState {
 	slug: string;
@@ -164,6 +76,7 @@ interface FieldFormState {
 	subFields: RepeaterSubFieldState[];
 	minItems: string;
 	maxItems: string;
+	allowedMimeTypes: string[];
 }
 
 function getInitialFormState(field?: SchemaField): FieldFormState {
@@ -187,6 +100,7 @@ function getInitialFormState(field?: SchemaField): FieldFormState {
 				: [],
 			minItems: (field.validation as Record<string, unknown>)?.minItems?.toString() ?? "",
 			maxItems: (field.validation as Record<string, unknown>)?.maxItems?.toString() ?? "",
+			allowedMimeTypes: field.validation?.allowedMimeTypes ?? [],
 		};
 	}
 	return {
@@ -206,6 +120,7 @@ function getInitialFormState(field?: SchemaField): FieldFormState {
 		subFields: [],
 		minItems: "",
 		maxItems: "",
+		allowedMimeTypes: [],
 	};
 }
 
@@ -213,6 +128,7 @@ function getInitialFormState(field?: SchemaField): FieldFormState {
  * Field editor dialog for creating/editing fields
  */
 export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: FieldEditorProps) {
+	const { t } = useLingui();
 	const [formState, setFormState] = React.useState(() => getInitialFormState(field));
 
 	// Reset state when dialog opens
@@ -226,6 +142,106 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 	const { minLength, maxLength, min, max, pattern, options } = formState;
 	const setField = <K extends keyof FieldFormState>(key: K, value: FieldFormState[K]) =>
 		setFormState((prev) => ({ ...prev, [key]: value }));
+
+	// Build field types inside the component so t`` works
+	const FIELD_TYPES: FieldTypeConfig[] = [
+		{
+			type: "string",
+			label: t`Short Text`,
+			description: t`Single line text input`,
+			icon: TextT,
+		},
+		{
+			type: "text",
+			label: t`Long Text`,
+			description: t`Multi-line plain text`,
+			icon: TextAlignLeft,
+		},
+		{
+			type: "number",
+			label: t`Number`,
+			description: t`Decimal number`,
+			icon: Hash,
+		},
+		{
+			type: "integer",
+			label: t`Integer`,
+			description: t`Whole number`,
+			icon: Hash,
+		},
+		{
+			type: "boolean",
+			label: t`Boolean`,
+			description: t`True/false toggle`,
+			icon: ToggleLeft,
+		},
+		{
+			type: "datetime",
+			label: t`Date & Time`,
+			description: t`Date and time picker`,
+			icon: Calendar,
+		},
+		{
+			type: "select",
+			label: t`Select`,
+			description: t`Single choice from options`,
+			icon: List,
+		},
+		{
+			type: "multiSelect",
+			label: t`Multi Select`,
+			description: t`Multiple choices from options`,
+			icon: ListChecks,
+		},
+		{
+			type: "portableText",
+			label: t`Rich Text`,
+			description: t`Rich text editor`,
+			icon: FileText,
+		},
+		{
+			type: "image",
+			label: t`Image`,
+			description: t`Image from media library`,
+			icon: ImageIcon,
+		},
+		{
+			type: "file",
+			label: t`File`,
+			description: t`File from media library`,
+			icon: File,
+		},
+		{
+			type: "reference",
+			label: t`Reference`,
+			description: t`Link to another content item`,
+			icon: LinkSimple,
+		},
+		{
+			type: "json",
+			label: t`JSON`,
+			description: t`Arbitrary JSON data`,
+			icon: BracketsCurly,
+		},
+		{
+			type: "slug",
+			label: t`Slug`,
+			description: t`URL-friendly identifier`,
+			icon: Link,
+		},
+		{
+			type: "url",
+			label: t`URL`,
+			description: t`Web address`,
+			icon: GlobeSimple,
+		},
+		{
+			type: "repeater",
+			label: t`Repeater`,
+			description: t`Repeating group of fields`,
+			icon: Rows,
+		},
+	];
 
 	// Auto-generate slug from label
 	const handleLabelChange = (value: string) => {
@@ -288,12 +304,20 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 				(validation as Record<string, unknown>).maxItems = parseInt(formState.maxItems, 10);
 		}
 
+		if (
+			(selectedType === "file" || selectedType === "image") &&
+			formState.allowedMimeTypes.length > 0
+		) {
+			validation.allowedMimeTypes = formState.allowedMimeTypes;
+		}
+
 		// Only include searchable for text-based fields
 		const isSearchableType =
 			selectedType === "string" ||
 			selectedType === "text" ||
 			selectedType === "portableText" ||
-			selectedType === "slug";
+			selectedType === "slug" ||
+			selectedType === "url";
 
 		const input: CreateFieldInput = {
 			slug,
@@ -302,33 +326,33 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 			required,
 			unique,
 			searchable: isSearchableType ? searchable : undefined,
-			validation: Object.keys(validation).length > 0 ? validation : undefined,
+			validation: Object.keys(validation).length > 0 ? validation : null,
 		};
 
 		onSave(input);
 	};
 
-	const typeConfig = FIELD_TYPES.find((t) => t.type === selectedType);
+	const typeConfig = FIELD_TYPES.find((fieldType) => fieldType.type === selectedType);
 
 	return (
 		<Dialog.Root open={open} onOpenChange={onOpenChange}>
 			<Dialog className="p-6 max-w-2xl" size="lg">
 				<div className="flex items-start justify-between gap-4 mb-4">
 					<Dialog.Title className="text-lg font-semibold leading-none tracking-tight">
-						{field ? "Edit Field" : step === "type" ? "Add Field" : "Configure Field"}
+						{field ? t`Edit Field` : step === "type" ? t`Add Field` : t`Configure Field`}
 					</Dialog.Title>
 					<Dialog.Close
-						aria-label="Close"
+						aria-label={t`Close`}
 						render={(props) => (
 							<Button
 								{...props}
 								variant="ghost"
 								shape="square"
-								aria-label="Close"
-								className="absolute right-4 top-4"
+								aria-label={t`Close`}
+								className="absolute end-4 top-4"
 							>
 								<X className="h-4 w-4" />
-								<span className="sr-only">Close</span>
+								<span className="sr-only">{t`Close`}</span>
 							</Button>
 						)}
 					/>
@@ -344,7 +368,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 									type="button"
 									onClick={() => handleTypeSelect(ft.type)}
 									className={cn(
-										"flex items-start space-x-3 p-4 rounded-lg border text-left transition-colors hover:border-kumo-brand hover:bg-kumo-tint/50",
+										"flex items-start space-x-3 p-4 rounded-lg border text-start transition-colors hover:border-kumo-brand hover:bg-kumo-tint/50",
 									)}
 								>
 									<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-kumo-tint">
@@ -372,10 +396,10 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 									<Button
 										variant="ghost"
 										size="sm"
-										className="ml-auto"
+										className="ms-auto"
 										onClick={() => setField("step", "type")}
 									>
-										Change
+										{t`Change`}
 									</Button>
 								)}
 							</div>
@@ -384,14 +408,14 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 						{/* Basic info */}
 						<div className="grid grid-cols-2 gap-4">
 							<Input
-								label="Label"
+								label={t`Label`}
 								value={label}
 								onChange={(e) => handleLabelChange(e.target.value)}
-								placeholder="Field Label"
+								placeholder={t`Field Label`}
 							/>
 							<div>
 								<Input
-									label="Slug"
+									label={t`Slug`}
 									value={slug}
 									onChange={(e) => setField("slug", e.target.value)}
 									placeholder="field_slug"
@@ -399,7 +423,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 								/>
 								{field && (
 									<p className="text-xs text-kumo-subtle mt-2">
-										Field slugs cannot be changed after creation
+										{t`Field slugs cannot be changed after creation`}
 									</p>
 								)}
 							</div>
@@ -407,63 +431,52 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 
 						{/* Toggles */}
 						<div className="flex items-center space-x-6">
-							<label className="flex items-center space-x-2">
-								<input
-									type="checkbox"
-									checked={required}
-									onChange={(e) => setField("required", e.target.checked)}
-									className="rounded border-kumo-line"
-								/>
-								<span className="text-sm">Required</span>
-							</label>
-							<label className="flex items-center space-x-2">
-								<input
-									type="checkbox"
-									checked={unique}
-									onChange={(e) => setField("unique", e.target.checked)}
-									className="rounded border-kumo-line"
-								/>
-								<span className="text-sm">Unique</span>
-							</label>
+							<Switch
+								checked={required}
+								onCheckedChange={(checked) => setField("required", checked)}
+								label={<span className="text-sm">{t`Required`}</span>}
+							/>
+							<Switch
+								checked={unique}
+								onCheckedChange={(checked) => setField("unique", checked)}
+								label={<span className="text-sm">{t`Unique`}</span>}
+							/>
 							{(selectedType === "string" ||
 								selectedType === "text" ||
 								selectedType === "portableText" ||
-								selectedType === "slug") && (
-								<label className="flex items-center space-x-2">
-									<input
-										type="checkbox"
-										checked={searchable}
-										onChange={(e) => setField("searchable", e.target.checked)}
-										className="rounded border-kumo-line"
-									/>
-									<span className="text-sm">Searchable</span>
-								</label>
+								selectedType === "slug" ||
+								selectedType === "url") && (
+								<Switch
+									checked={searchable}
+									onCheckedChange={(checked) => setField("searchable", checked)}
+									label={<span className="text-sm">{t`Searchable`}</span>}
+								/>
 							)}
 						</div>
 
 						{/* Type-specific validation */}
 						{(selectedType === "string" || selectedType === "text" || selectedType === "slug") && (
 							<div className="space-y-4">
-								<h4 className="font-medium text-sm">Validation</h4>
+								<h4 className="font-medium text-sm">{t`Validation`}</h4>
 								<div className="grid grid-cols-2 gap-4">
 									<Input
-										label="Min Length"
+										label={t`Min Length`}
 										type="number"
 										value={minLength}
 										onChange={(e) => setField("minLength", e.target.value)}
-										placeholder="No minimum"
+										placeholder={t`No minimum`}
 									/>
 									<Input
-										label="Max Length"
+										label={t`Max Length`}
 										type="number"
 										value={maxLength}
 										onChange={(e) => setField("maxLength", e.target.value)}
-										placeholder="No maximum"
+										placeholder={t`No maximum`}
 									/>
 								</div>
 								{selectedType === "string" && (
 									<Input
-										label="Pattern (Regex)"
+										label={t`Pattern (Regex)`}
 										value={pattern}
 										onChange={(e) => setField("pattern", e.target.value)}
 										placeholder="^[a-z]+$"
@@ -474,21 +487,21 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 
 						{(selectedType === "number" || selectedType === "integer") && (
 							<div className="space-y-4">
-								<h4 className="font-medium text-sm">Validation</h4>
+								<h4 className="font-medium text-sm">{t`Validation`}</h4>
 								<div className="grid grid-cols-2 gap-4">
 									<Input
-										label="Min Value"
+										label={t`Min Value`}
 										type="number"
 										value={min}
 										onChange={(e) => setField("min", e.target.value)}
-										placeholder="No minimum"
+										placeholder={t`No minimum`}
 									/>
 									<Input
-										label="Max Value"
+										label={t`Max Value`}
 										type="number"
 										value={max}
 										onChange={(e) => setField("max", e.target.value)}
-										placeholder="No maximum"
+										placeholder={t`No maximum`}
 									/>
 								</div>
 							</div>
@@ -496,10 +509,10 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 
 						{(selectedType === "select" || selectedType === "multiSelect") && (
 							<InputArea
-								label="Options (one per line)"
+								label={t`Options (one per line)`}
 								value={options}
 								onChange={(e) => setField("options", e.target.value)}
-								placeholder={"Option 1\nOption 2\nOption 3"}
+								placeholder={t`Option 1\nOption 2\nOption 3`}
 								rows={5}
 							/>
 						)}
@@ -507,7 +520,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 						{selectedType === "repeater" && (
 							<div className="space-y-4">
 								<div className="flex items-center justify-between">
-									<h4 className="font-medium text-sm">Sub-Fields</h4>
+									<h4 className="font-medium text-sm">{t`Sub-Fields`}</h4>
 									<Button
 										variant="outline"
 										size="sm"
@@ -522,13 +535,13 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 											}))
 										}
 									>
-										Add Sub-Field
+										{t`Add Sub-Field`}
 									</Button>
 								</div>
 
 								{formState.subFields.length === 0 && (
 									<p className="text-sm text-kumo-subtle text-center py-4">
-										Add at least one sub-field to define the repeater structure.
+										{t`Add at least one sub-field to define the repeater structure.`}
 									</p>
 								)}
 
@@ -537,7 +550,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 										<div className="flex-1 space-y-2">
 											<div className="grid grid-cols-2 gap-2">
 												<Input
-													label="Label"
+													label={t`Label`}
 													value={sf.label}
 													onChange={(e) => {
 														const updated = [...formState.subFields];
@@ -551,41 +564,39 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 														};
 														setFormState((prev) => ({ ...prev, subFields: updated }));
 													}}
-													placeholder="Field label"
+													placeholder={t`Field label`}
 												/>
 												<div>
-													<label className="text-sm font-medium">Type</label>
-													<select
-														className="w-full mt-1 rounded-md border px-3 py-2 text-sm"
+													<Select
+														label={t`Type`}
 														value={sf.type}
-														onChange={(e) => {
+														onValueChange={(v) => {
 															const updated = [...formState.subFields];
-															updated[i] = { ...sf, type: e.target.value };
+															updated[i] = { ...sf, type: v ?? "string" };
 															setFormState((prev) => ({ ...prev, subFields: updated }));
 														}}
-													>
-														<option value="string">Short Text</option>
-														<option value="text">Long Text</option>
-														<option value="number">Number</option>
-														<option value="integer">Integer</option>
-														<option value="boolean">Boolean</option>
-														<option value="datetime">Date & Time</option>
-														<option value="select">Select</option>
-													</select>
+														items={{
+															string: t`Short Text`,
+															text: t`Long Text`,
+															number: t`Number`,
+															integer: t`Integer`,
+															boolean: t`Boolean`,
+															datetime: t`Date & Time`,
+															select: t`Select`,
+															url: t`URL`,
+														}}
+													/>
 												</div>
 											</div>
-											<label className="flex items-center gap-2 text-sm">
-												<input
-													type="checkbox"
-													checked={sf.required}
-													onChange={(e) => {
-														const updated = [...formState.subFields];
-														updated[i] = { ...sf, required: e.target.checked };
-														setFormState((prev) => ({ ...prev, subFields: updated }));
-													}}
-												/>
-												Required
-											</label>
+											<Switch
+												label={t`Required`}
+												checked={sf.required ?? false}
+												onCheckedChange={(checked) => {
+													const updated = [...formState.subFields];
+													updated[i] = { ...sf, required: checked };
+													setFormState((prev) => ({ ...prev, subFields: updated }));
+												}}
+											/>
 										</div>
 										<Button
 											variant="ghost"
@@ -596,7 +607,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 													subFields: prev.subFields.filter((_, j) => j !== i),
 												}))
 											}
-											aria-label="Remove sub-field"
+											aria-label={t`Remove sub-field`}
 										>
 											<Trash className="h-4 w-4 text-kumo-danger" />
 										</Button>
@@ -605,21 +616,28 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 
 								<div className="grid grid-cols-2 gap-4">
 									<Input
-										label="Min Items"
+										label={t`Min Items`}
 										type="number"
 										value={formState.minItems}
 										onChange={(e) => setField("minItems", e.target.value)}
 										placeholder="0"
 									/>
 									<Input
-										label="Max Items"
+										label={t`Max Items`}
 										type="number"
 										value={formState.maxItems}
 										onChange={(e) => setField("maxItems", e.target.value)}
-										placeholder="No limit"
+										placeholder={t`No limit`}
 									/>
 								</div>
 							</div>
+						)}
+
+						{(selectedType === "file" || selectedType === "image") && (
+							<AllowedTypesEditor
+								value={formState.allowedMimeTypes}
+								onChange={(next) => setField("allowedMimeTypes", next)}
+							/>
 						)}
 					</div>
 				)}
@@ -627,7 +645,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 				{step === "config" && (
 					<div className="flex flex-col-reverse gap-2 py-2 sm:flex-row sm:justify-end sm:space-x-2">
 						<Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
-							Cancel
+							{t`Cancel`}
 						</Button>
 						<Button
 							onClick={handleSave}
@@ -638,7 +656,7 @@ export function FieldEditor({ open, onOpenChange, field, onSave, isSaving }: Fie
 								(selectedType === "repeater" && formState.subFields.length === 0)
 							}
 						>
-							{isSaving ? "Saving..." : field ? "Update Field" : "Add Field"}
+							{isSaving ? t`Saving...` : field ? t`Update Field` : t`Add Field`}
 						</Button>
 					</div>
 				)}

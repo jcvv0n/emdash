@@ -5,7 +5,7 @@
  * Items can be added, removed, and reordered via drag-and-drop.
  */
 
-import { Button, Input, InputArea } from "@cloudflare/kumo";
+import { Button, Input, InputArea, Select, Switch } from "@cloudflare/kumo";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
@@ -15,10 +15,14 @@ import {
 	arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Trash, DotsSixVertical, CaretDown, CaretRight } from "@phosphor-icons/react";
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { Plus, Trash, DotsSixVertical, CaretDown } from "@phosphor-icons/react";
 import * as React from "react";
 
+import { fromDatetimeLocalInputValue, toDatetimeLocalInputValue } from "../lib/datetime-local.js";
 import { cn } from "../lib/utils.js";
+import { CaretNext } from "./ArrowIcons.js";
 
 interface RepeaterSubFieldDef {
 	slug: string;
@@ -61,14 +65,29 @@ export function RepeaterField({
 	minItems = 0,
 	maxItems,
 }: RepeaterFieldProps) {
+	const { t } = useLingui();
 	const rawItems = Array.isArray(value) ? value : [];
 	const [items, setItems] = React.useState<RepeaterItem[]>(() => ensureKeys(rawItems));
 	const [collapsedItems, setCollapsedItems] = React.useState<Set<string>>(new Set());
 
-	// Sync from external value changes
+	// Sync from external value changes.
+	// Preserve each item's _key by position so round-trips through onChange
+	// (which strips _key) don't remount children on every keystroke.
 	React.useEffect(() => {
 		const incoming = Array.isArray(value) ? value : [];
-		setItems(ensureKeys(incoming));
+		setItems((prev) =>
+			incoming.map((item, i) => {
+				const obj = (typeof item === "object" && item !== null ? item : {}) as Record<
+					string,
+					unknown
+				>;
+				const existingKey = (obj._key as string) || prev[i]?._key;
+				return {
+					...obj,
+					_key: existingKey || `item-${i}-${Date.now()}`,
+				};
+			}),
+		);
 	}, [value]);
 
 	const emitChange = (updated: RepeaterItem[]) => {
@@ -124,19 +143,21 @@ export function RepeaterField({
 				<label htmlFor={id} className="text-sm font-medium">
 					{label}
 					{items.length > 0 && (
-						<span className="ml-2 text-kumo-subtle font-normal">({items.length} items)</span>
+						<span className="ms-2 text-kumo-subtle font-normal">
+							{plural(items.length, { one: "(# item)", other: "(# items)" })}
+						</span>
 					)}
 				</label>
 				{canAdd && (
 					<Button variant="outline" size="sm" icon={<Plus />} onClick={handleAdd}>
-						Add Item
+						{t`Add Item`}
 					</Button>
 				)}
 			</div>
 
 			{items.length === 0 ? (
 				<div className="border-2 border-dashed rounded-lg p-6 text-center text-kumo-subtle">
-					<p className="text-sm">No items yet</p>
+					<p className="text-sm">{t`No items yet`}</p>
 					{canAdd && (
 						<Button
 							variant="outline"
@@ -145,7 +166,7 @@ export function RepeaterField({
 							icon={<Plus />}
 							onClick={handleAdd}
 						>
-							Add First Item
+							{t`Add First Item`}
 						</Button>
 					)}
 				</div>
@@ -197,6 +218,7 @@ function SortableRepeaterItem({
 	onRemove,
 	onChange,
 }: SortableRepeaterItemProps) {
+	const { t } = useLingui();
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: item._key,
 	});
@@ -209,7 +231,7 @@ function SortableRepeaterItem({
 	// Use the first text sub-field as the item summary label
 	const summaryField = subFields.find((sf) => sf.type === "string" || sf.type === "text");
 	const summaryValue = summaryField ? (item[summaryField.slug] as string) || "" : "";
-	const summaryLabel = summaryValue || `Item ${index + 1}`;
+	const summaryLabel = summaryValue || t`Item ${index + 1}`;
 
 	return (
 		<div
@@ -232,7 +254,7 @@ function SortableRepeaterItem({
 					onClick={(e) => e.stopPropagation()}
 				/>
 				{isCollapsed ? (
-					<CaretRight className="h-4 w-4 text-kumo-subtle shrink-0" />
+					<CaretNext className="h-4 w-4 text-kumo-subtle shrink-0" />
 				) : (
 					<CaretDown className="h-4 w-4 text-kumo-subtle shrink-0" />
 				)}
@@ -245,7 +267,7 @@ function SortableRepeaterItem({
 							e.stopPropagation();
 							onRemove();
 						}}
-						aria-label={`Remove item ${index + 1}`}
+						aria-label={t`Remove item ${index + 1}`}
 					>
 						<Trash className="h-3.5 w-3.5 text-kumo-danger" />
 					</Button>
@@ -276,6 +298,7 @@ interface SubFieldInputProps {
 }
 
 function SubFieldInput({ subField, value, onChange }: SubFieldInputProps) {
+	const { t } = useLingui();
 	switch (subField.type) {
 		case "string":
 			return (
@@ -284,6 +307,7 @@ function SubFieldInput({ subField, value, onChange }: SubFieldInputProps) {
 					value={typeof value === "string" ? value : ""}
 					onChange={(e) => onChange(e.target.value)}
 					required={subField.required}
+					dir="auto"
 				/>
 			);
 		case "text":
@@ -294,6 +318,7 @@ function SubFieldInput({ subField, value, onChange }: SubFieldInputProps) {
 					onChange={(e) => onChange(e.target.value)}
 					required={subField.required}
 					rows={3}
+					dir="auto"
 				/>
 			);
 		case "number":
@@ -310,43 +335,33 @@ function SubFieldInput({ subField, value, onChange }: SubFieldInputProps) {
 			);
 		case "boolean":
 			return (
-				<label className="flex items-center gap-2">
-					<input
-						type="checkbox"
-						checked={Boolean(value)}
-						onChange={(e) => onChange(e.target.checked)}
-					/>
-					<span className="text-sm">{subField.label}</span>
-				</label>
+				<Switch
+					checked={Boolean(value)}
+					onCheckedChange={(checked) => onChange(checked)}
+					label={<span className="text-sm">{subField.label}</span>}
+				/>
 			);
 		case "datetime":
 			return (
 				<Input
 					label={subField.label}
 					type="datetime-local"
-					value={typeof value === "string" ? value : ""}
-					onChange={(e) => onChange(e.target.value)}
+					value={toDatetimeLocalInputValue(value)}
+					onChange={(e) => onChange(fromDatetimeLocalInputValue(e.target.value))}
 					required={subField.required}
 				/>
 			);
 		case "select":
 			return (
-				<div>
-					<label className="text-sm font-medium">{subField.label}</label>
-					<select
-						className="w-full mt-1 rounded-md border px-3 py-2 text-sm"
-						value={typeof value === "string" ? value : ""}
-						onChange={(e) => onChange(e.target.value)}
-						required={subField.required}
-					>
-						<option value="">Select...</option>
-						{subField.options?.map((opt) => (
-							<option key={opt} value={opt}>
-								{opt}
-							</option>
-						))}
-					</select>
-				</div>
+				<Select
+					label={subField.label}
+					value={typeof value === "string" ? value : ""}
+					onValueChange={(v) => onChange(v ?? "")}
+					items={{
+						"": t`Select...`,
+						...Object.fromEntries((subField.options ?? []).map((opt) => [opt, opt])),
+					}}
+				/>
 			);
 		default:
 			return (

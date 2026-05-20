@@ -71,7 +71,7 @@ export {
 } from "./sandbox/index.js";
 export type {
 	SandboxRunner,
-	SandboxedPlugin,
+	SandboxedPluginInstance,
 	SandboxRunnerFactory,
 	SandboxOptions,
 	SandboxEmailMessage,
@@ -121,6 +121,7 @@ export type {
 	ResolvedPluginHooks,
 	ContentHookEvent,
 	ContentDeleteEvent,
+	ContentPublishStateChangeEvent,
 	MediaUploadEvent,
 	MediaAfterUploadEvent,
 	LifecycleEvent,
@@ -182,12 +183,13 @@ export type {
 	PluginDefinition,
 	ResolvedPlugin,
 	PluginManifest,
-
-	// Standard plugin format
-	StandardPluginDefinition,
-	StandardHookHandler,
-	StandardHookEntry,
-	StandardRouteHandler,
-	StandardRouteEntry,
 } from "./types.js";
-export { isStandardPluginDefinition } from "./types.js";
+
+// Capability normalization (legacy → canonical alias layer)
+export {
+	CAPABILITY_RENAMES,
+	isDeprecatedCapability,
+	normalizeCapability,
+	normalizeCapabilities,
+} from "./types.js";
+export type { CurrentPluginCapability, DeprecatedPluginCapability } from "./types.js";

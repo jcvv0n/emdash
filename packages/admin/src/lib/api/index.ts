@@ -13,6 +13,7 @@ export {
 	type FindManyResult,
 	type AdminManifest,
 	fetchManifest,
+	fetchAuthMode,
 } from "./client.js";
 
 // Content CRUD and revisions
@@ -114,6 +115,7 @@ export {
 	type CreateAllowedDomainInput,
 	type UpdateAllowedDomainInput,
 	type SignupVerifyResult,
+	type InviteVerifyResult,
 	fetchUsers,
 	fetchUser,
 	updateUser,
@@ -121,6 +123,7 @@ export {
 	disableUser,
 	enableUser,
 	inviteUser,
+	validateInviteToken,
 	fetchPasskeys,
 	renamePasskey,
 	deletePasskey,
@@ -151,11 +154,14 @@ export {
 	type Menu,
 	type MenuItem,
 	type MenuWithItems,
+	type MenuTranslation,
+	type MenuTranslationsResponse,
 	type CreateMenuInput,
 	type UpdateMenuInput,
 	type CreateMenuItemInput,
 	type UpdateMenuItemInput,
 	type ReorderMenuItemsInput,
+	type LocaleOptions as MenuLocaleOptions,
 	fetchMenus,
 	fetchMenu,
 	createMenu,
@@ -165,6 +171,8 @@ export {
 	updateMenuItem,
 	deleteMenuItem,
 	reorderMenuItems,
+	fetchMenuTranslations,
+	createMenuTranslation,
 } from "./menus.js";
 
 // Widget areas
@@ -205,6 +213,8 @@ export {
 export {
 	type TaxonomyTerm,
 	type TaxonomyDef,
+	type TermTranslation,
+	type TermTranslationsResponse,
 	type CreateTaxonomyInput,
 	type CreateTermInput,
 	type UpdateTermInput,
@@ -215,6 +225,8 @@ export {
 	createTerm,
 	updateTerm,
 	deleteTerm,
+	fetchTermTranslations,
+	createTermTranslation,
 } from "./taxonomies.js";
 
 // WordPress import

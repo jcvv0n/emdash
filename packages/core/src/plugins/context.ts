@@ -16,7 +16,12 @@ import { SeoRepository } from "../database/repositories/seo.js";
 import { UserRepository } from "../database/repositories/user.js";
 import { withTransaction } from "../database/transaction.js";
 import type { Database } from "../database/types.js";
-import { validateExternalUrl, SsrfError, stripCredentialHeaders } from "../import/ssrf.js";
+import {
+	resolveAndValidateExternalUrl,
+	SsrfError,
+	stripCredentialHeaders,
+} from "../import/ssrf.js";
+import { invalidateSiteSettingsCache } from "../settings/index.js";
 import type { Storage } from "../storage/types.js";
 import { CronAccessImpl } from "./cron.js";
 import type { EmailPipeline } from "./email.js";
@@ -202,9 +207,13 @@ export function createContentAccess(db: Kysely<Database>): ContentAccess {
 			const result: ContentItem = {
 				id: item.id,
 				type: item.type,
+				slug: item.slug,
+				status: item.status,
 				data: item.data,
 				createdAt: item.createdAt,
 				updatedAt: item.updatedAt,
+				locale: item.locale,
+				publishedAt: item.publishedAt,
 			};
 
 			if (await seoRepo.isEnabled(collection)) {
@@ -232,14 +241,19 @@ export function createContentAccess(db: Kysely<Database>): ContentAccess {
 				limit: options?.limit ?? 50,
 				cursor: options?.cursor,
 				orderBy,
+				where: options?.where,
 			});
 
 			const items: ContentItem[] = result.items.map((item) => ({
 				id: item.id,
 				type: item.type,
+				slug: item.slug,
+				status: item.status,
 				data: item.data,
 				createdAt: item.createdAt,
 				updatedAt: item.updatedAt,
+				locale: item.locale,
+				publishedAt: item.publishedAt,
 			}));
 
 			if (items.length > 0 && (await seoRepo.isEnabled(collection))) {
@@ -294,9 +308,13 @@ export function createContentAccessWithWrite(db: Kysely<Database>): ContentAcces
 				const result: ContentItem = {
 					id: item.id,
 					type: item.type,
+					slug: item.slug,
+					status: item.status,
 					data: item.data,
 					createdAt: item.createdAt,
 					updatedAt: item.updatedAt,
+					locale: item.locale,
+					publishedAt: item.publishedAt,
 				};
 
 				if (hasSeo) {
@@ -336,9 +354,13 @@ export function createContentAccessWithWrite(db: Kysely<Database>): ContentAcces
 				const result: ContentItem = {
 					id: item.id,
 					type: item.type,
+					slug: item.slug,
+					status: item.status,
 					data: item.data,
 					createdAt: item.createdAt,
 					updatedAt: item.updatedAt,
+					locale: item.locale,
+					publishedAt: item.publishedAt,
 				};
 
 				if (hasSeo) {
@@ -439,12 +461,13 @@ export function createMediaAccessWithWrite(
 				);
 			}
 
-			const mediaId = ulid();
+			// Generate a storage key with a unique prefix
+			const keyPrefix = ulid();
 			// Extract extension from basename (ignore path separators)
 			const basename = filename.split("/").pop() ?? filename;
 			const dotIdx = basename.lastIndexOf(".");
 			const ext = dotIdx > 0 ? basename.slice(dotIdx).toLowerCase() : "";
-			const storageKey = `${mediaId}${ext}`;
+			const storageKey = `${keyPrefix}${ext}`;
 
 			// Upload to storage first
 			await storage.upload({
@@ -454,8 +477,9 @@ export function createMediaAccessWithWrite(
 			});
 
 			// Create DB record — clean up storage on failure
+			let media;
 			try {
-				await mediaRepo.create({
+				media = await mediaRepo.create({
 					filename: basename,
 					mimeType: contentType,
 					size: bytes.byteLength,
@@ -472,14 +496,23 @@ export function createMediaAccessWithWrite(
 			}
 
 			return {
-				mediaId,
+				mediaId: media.id,
 				storageKey,
 				url: `/_emdash/api/media/file/${storageKey}`,
 			};
 		},
 
 		async delete(id: string): Promise<boolean> {
-			return mediaRepo.delete(id);
+			const deleted = await mediaRepo.delete(id);
+			// Plugins can delete media that's referenced by site settings
+			// (`logo`, `favicon`, `seo.defaultOgImage`); the worker-scoped
+			// resolved-URL cache must be dropped or it will keep serving
+			// 404s. Matches the invalidation in
+			// `EmDashRuntime.handleMediaDelete`.
+			if (deleted) {
+				invalidateSiteSettingsCache();
+			}
+			return deleted;
 		},
 	};
 }
@@ -491,11 +524,17 @@ export function createMediaAccessWithWrite(
 /** Maximum number of redirects to follow in plugin HTTP access */
 const MAX_PLUGIN_REDIRECTS = 5;
 
+/**
+ * Check if a hostname matches any pattern in the allowed list.
+ * Patterns: "*" matches all, "*.example.com" matches subdomains AND bare "example.com",
+ * "api.example.com" matches exactly.
+ */
 function isHostAllowed(host: string, allowedHosts: string[]): boolean {
 	return allowedHosts.some((pattern) => {
 		if (pattern === "*") return true;
 		if (pattern.startsWith("*.")) {
 			const suffix = pattern.slice(1); // ".example.com"
+			// Match subdomains (foo.example.com) and bare domain (example.com)
 			return host.endsWith(suffix) || host === pattern.slice(2);
 		}
 		return host === pattern;
@@ -574,9 +613,10 @@ export function createUnrestrictedHttpAccess(pluginId: string): HttpAccess {
 			let currentInit = init;
 
 			for (let i = 0; i <= MAX_PLUGIN_REDIRECTS; i++) {
-				// Validate each URL against SSRF rules (private IPs, metadata endpoints)
+				// Validate each URL against SSRF rules (private IPs, metadata
+				// endpoints, wildcard DNS, resolved-IP private ranges).
 				try {
-					validateExternalUrl(currentUrl);
+					await resolveAndValidateExternalUrl(currentUrl);
 				} catch (e) {
 					const msg = e instanceof SsrfError ? e.message : "SSRF validation failed";
 					throw new Error(
@@ -617,14 +657,14 @@ export function createUnrestrictedHttpAccess(pluginId: string): HttpAccess {
 }
 
 /**
- * Create blocked HTTP access (for plugins without network:fetch capability)
+ * Create blocked HTTP access (for plugins without network:request capability)
  */
 export function createBlockedHttpAccess(pluginId: string): HttpAccess {
 	return {
 		async fetch(): Promise<never> {
 			throw new Error(
-				`Plugin "${pluginId}" does not have the "network:fetch" capability. ` +
-					`Add "network:fetch" to the plugin's capabilities to enable HTTP requests.`,
+				`Plugin "${pluginId}" does not have the "network:request" capability. ` +
+					`Add "network:request" to the plugin's capabilities to enable HTTP requests.`,
 			);
 		},
 	};
@@ -824,6 +864,13 @@ export interface PluginContextFactoryOptions {
 	 * If not provided (or no provider configured), ctx.email will be undefined.
 	 */
 	emailPipeline?: EmailPipeline;
+	/**
+	 * Pre-resolved list of trusted proxy header names (from the runtime
+	 * `EmDashConfig.trustedProxyHeaders` or the env var). Plugin route
+	 * handlers pass this to `extractRequestMeta` so plugins see the same
+	 * client IP the core auth path does.
+	 */
+	trustedProxyHeaders?: string[];
 }
 
 /**
@@ -865,32 +912,35 @@ export class PluginContextFactory {
 		const storage = createStorageAccess(this.db, plugin.id, plugin.storage);
 
 		// Capability-gated: content
+		// Note: capabilities reach this point already normalized to the
+		// canonical names by definePlugin / adaptSandboxEntry. Deprecated
+		// names ("read:content", "write:content") never appear here.
 		let content: ContentAccess | ContentAccessWithWrite | undefined;
-		if (capabilities.has("write:content")) {
+		if (capabilities.has("content:write")) {
 			content = createContentAccessWithWrite(this.db);
-		} else if (capabilities.has("read:content")) {
+		} else if (capabilities.has("content:read")) {
 			content = createContentAccess(this.db);
 		}
 
 		// Capability-gated: media
 		let media: MediaAccess | MediaAccessWithWrite | undefined;
-		if (capabilities.has("write:media") && this.getUploadUrl) {
+		if (capabilities.has("media:write") && this.getUploadUrl) {
 			media = createMediaAccessWithWrite(this.db, this.getUploadUrl, this.storage);
-		} else if (capabilities.has("read:media")) {
+		} else if (capabilities.has("media:read")) {
 			media = createMediaAccess(this.db);
 		}
 
 		// Capability-gated: http
 		let http: HttpAccess | undefined;
-		if (capabilities.has("network:fetch:any")) {
+		if (capabilities.has("network:request:unrestricted")) {
 			http = createUnrestrictedHttpAccess(plugin.id);
-		} else if (capabilities.has("network:fetch")) {
+		} else if (capabilities.has("network:request")) {
 			http = createHttpAccess(plugin.id, plugin.allowedHosts);
 		}
 
 		// Capability-gated: users
 		let users: UserAccess | undefined;
-		if (capabilities.has("read:users")) {
+		if (capabilities.has("users:read")) {
 			users = createUserAccess(this.db);
 		}
 

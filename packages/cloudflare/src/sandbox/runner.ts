@@ -12,14 +12,15 @@
  */
 
 import { env, exports } from "cloudflare:workers";
-import type {
-	SandboxRunner,
-	SandboxedPlugin,
-	SandboxEmailSendCallback,
-	SandboxOptions,
-	SandboxRunnerFactory,
-	SerializedRequest,
-	PluginManifest,
+import {
+	normalizeCapabilities,
+	type SandboxRunner,
+	type SandboxedPluginInstance,
+	type SandboxEmailSendCallback,
+	type SandboxOptions,
+	type SandboxRunnerFactory,
+	type SerializedRequest,
+	type PluginManifest,
 } from "emdash";
 
 import { setEmailSendCallback } from "./bridge.js";
@@ -130,7 +131,7 @@ export class CloudflareSandboxRunner implements SandboxRunner {
 	 * @param manifest - Plugin manifest with capabilities and storage declarations
 	 * @param code - The bundled plugin JavaScript code
 	 */
-	async load(manifest: PluginManifest, code: string): Promise<SandboxedPlugin> {
+	async load(manifest: PluginManifest, code: string): Promise<SandboxedPluginInstance> {
 		const pluginId = `${manifest.id}:${manifest.version}`;
 
 		// Return cached plugin if available
@@ -183,7 +184,7 @@ export class CloudflareSandboxRunner implements SandboxRunner {
  * We must create fresh stubs for each invocation to avoid I/O isolation errors:
  * "Cannot perform I/O on behalf of a different request"
  */
-class CloudflareSandboxedPlugin implements SandboxedPlugin {
+class CloudflareSandboxedPlugin implements SandboxedPluginInstance {
 	readonly id: string;
 	readonly manifest: PluginManifest;
 	private loader: WorkerLoader;
@@ -228,12 +229,18 @@ class CloudflareSandboxedPlugin implements SandboxedPlugin {
 			});
 		}
 
-		// Create fresh bridge binding for THIS request
+		// Create fresh bridge binding for THIS request.
+		//
+		// Capabilities are normalized to canonical names here so the bridge
+		// only ever sees the current vocabulary. Manifests installed before
+		// the rename (or sites still using the legacy alias layer) keep
+		// working — `normalizeCapabilities` rewrites legacy names like
+		// `read:content` → `content:read` and `network:fetch` → `network:request`.
 		const bridgeBinding = this.createBridge({
 			props: {
 				pluginId: this.manifest.id,
 				pluginVersion: this.manifest.version || "0.0.0",
-				capabilities: this.manifest.capabilities || [],
+				capabilities: normalizeCapabilities(this.manifest.capabilities || []),
 				allowedHosts: this.manifest.allowedHosts || [],
 				storageCollections: Object.keys(this.manifest.storage || {}),
 			},
@@ -248,7 +255,7 @@ class CloudflareSandboxedPlugin implements SandboxedPlugin {
 		// Get a fresh stub with the new bridge binding.
 		// Worker Loader caches the isolate but the stub/bindings are per-call.
 		return this.loader.get(this.id, () => ({
-			compatibilityDate: "2025-01-01",
+			compatibilityDate: "2026-04-01",
 			mainModule: "plugin.js",
 			modules: {
 				"plugin.js": { js: this.wrapperCode! },
